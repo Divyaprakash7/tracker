@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tracker — Daily Task Board</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --ink:#0F1115;
+    --panel:#171A21;
+    --panel-raised:#1E222B;
+    --line:#2A2F3A;
+    --paper:#E9E6DC;
+    --paper-dim:#9AA0AC;
+    --todo:#5B6B8C;
+    --todo-bg:rgba(91,107,140,0.12);
+    --work:#F2A93B;
+    --work-bg:rgba(242,169,59,0.12);
+    --done:#3FB88A;
+    --done-bg:rgba(63,184,138,0.12);
+    --danger:#E0616B;
+    --radius:10px;
+    --shadow:0 10px 24px rgba(0,0,0,0.28);
+  }
+
+  html[data-theme="light"]{
+    --ink:#F3F1E9;
+    --panel:#FFFFFF;
+    --panel-raised:#FAF8F2;
+    --line:#E2DED2;
+    --paper:#20221F;
+    --paper-dim:#767C72;
+    --todo:#4C5D82;
+    --todo-bg:rgba(76,93,130,0.10);
+    --work:#C5811F;
+    --work-bg:rgba(197,129,31,0.12);
+    --done:#26936B;
+    --done-bg:rgba(38,147,107,0.10);
+    --danger:#C94550;
+    --shadow:0 10px 24px rgba(30,30,20,0.10);
+  }
+
+  html, body{ transition:background-color .25s ease, color .25s ease; }
+
+  /* ---- Theme toggle ---- */
+  .theme-toggle{
+    position:relative;
+    width:52px; height:28px;
+    border-radius:20px;
+    background:var(--panel-raised);
+    border:1px solid var(--line);
+    cursor:pointer;
+    flex-shrink:0;
+  }
+  .theme-toggle .knob{
+    position:absolute;
+    top:2px; left:2px;
+    width:22px; height:22px;
+    border-radius:50%;
+    background:var(--work);
+    display:flex; align-items:center; justify-content:center;
+    font-size:12px;
+    transition:left .2s ease, background .2s ease;
+  }
+  html[data-theme="light"] .theme-toggle .knob{ left:26px; background:var(--todo); }
+  .theme-toggle:focus-visible{ outline:2px solid var(--work); outline-offset:2px; }
+
+  *{box-sizing:border-box; margin:0; padding:0;}
+
+  body{
+    background:
+      radial-gradient(circle at 15% 0%, rgba(91,107,140,0.08), transparent 40%),
+      radial-gradient(circle at 85% 100%, rgba(63,184,138,0.06), transparent 40%),
+      var(--ink);
+    color:var(--paper);
+    font-family:'Inter', sans-serif;
+    min-height:100vh;
+    padding:32px 24px 60px;
+  }
+
+  .wrap{ max-width:1180px; margin:0 auto; }
+
+  /* ---- Header / masthead ---- */
+  header{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    flex-wrap:wrap;
+    gap:20px;
+    border-bottom:1px solid var(--line);
+    padding-bottom:18px;
+    margin-bottom:28px;
+  }
+  .masthead h1{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:clamp(28px,4vw,38px);
+    font-weight:700;
+    letter-spacing:-0.02em;
+  }
+  .masthead .tag{
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--paper-dim);
+    margin-top:6px;
+  }
+  .date-stamp{
+    font-family:'JetBrains Mono', monospace;
+    font-size:12px;
+    color:var(--paper-dim);
+    text-align:right;
+    line-height:1.6;
+  }
+  .date-stamp b{ color:var(--paper); font-size:14px; }
+
+  /* ---- Sheet sync bar ---- */
+  .conn{
+    display:flex;
+    align-items:center;
+    gap:7px;
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px;
+    color:var(--paper-dim);
+  }
+  .conn .dot{
+    width:7px; height:7px; border-radius:50%;
+    background:#5b6072;
+    box-shadow:0 0 0 3px rgba(91,96,114,0.15);
+  }
+  .conn.ok .dot{ background:var(--done); box-shadow:0 0 0 3px rgba(63,184,138,0.15); }
+  .conn.err .dot{ background:var(--danger); box-shadow:0 0 0 3px rgba(224,97,107,0.15); }
+  .conn.busy .dot{ background:var(--work); box-shadow:0 0 0 3px rgba(242,169,59,0.15); animation:pulse 1s infinite; }
+  @keyframes pulse{ 50%{ opacity:0.4; } }
+
+  .btn{
+    font-family:'Inter', sans-serif;
+    font-weight:600;
+    font-size:13px;
+    padding:9px 15px;
+    border-radius:7px;
+    border:1px solid var(--line);
+    background:var(--panel-raised);
+    color:var(--paper);
+    cursor:pointer;
+    transition:transform .12s ease, border-color .12s ease;
+    white-space:nowrap;
+  }
+  .btn:hover{ border-color:var(--paper-dim); transform:translateY(-1px); }
+  .btn:active{ transform:translateY(0); }
+  .btn.primary{ background:var(--todo); border-color:var(--todo); color:#fff; }
+  .btn.primary:hover{ filter:brightness(1.08); }
+  .btn:focus-visible{ outline:2px solid var(--work); outline-offset:2px; }
+
+  /* ---- Progress bar ---- */
+  .progress-wrap{
+    margin-bottom:22px;
+  }
+  .progress-labels{
+    display:flex;
+    justify-content:space-between;
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px;
+    color:var(--paper-dim);
+    margin-bottom:6px;
+  }
+  .progress-track{
+    height:6px;
+    border-radius:4px;
+    background:var(--panel-raised);
+    border:1px solid var(--line);
+    overflow:hidden;
+  }
+  .progress-fill{
+    height:100%;
+    width:0%;
+    background:linear-gradient(90deg, var(--todo), var(--work), var(--done));
+    border-radius:4px;
+    transition:width .4s cubic-bezier(.4,0,.2,1);
+  }
+
+  /* ---- Search ---- */
+  .search-wrap{ position:relative; }
+  #searchInput{
+    background:var(--ink);
+    border:1px solid var(--line);
+    border-radius:7px;
+    padding:9px 13px 9px 30px;
+    color:var(--paper);
+    font-size:13px;
+    width:180px;
+    transition:width .2s ease, border-color .2s ease;
+  }
+  #searchInput:focus{ outline:none; border-color:var(--work); width:220px; }
+  .search-wrap::before{
+    content:"⌕";
+    position:absolute;
+    left:11px; top:50%;
+    transform:translateY(-50%);
+    color:var(--paper-dim);
+    font-size:14px;
+    pointer-events:none;
+  }
+
+  /* ---- Toasts ---- */
+  .toast-stack{
+    position:fixed;
+    bottom:20px; right:20px;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    z-index:50;
+  }
+  .toast{
+    background:var(--panel-raised);
+    border:1px solid var(--line);
+    border-left:3px solid var(--todo);
+    border-radius:8px;
+    padding:10px 14px;
+    font-size:12.5px;
+    font-family:'JetBrains Mono', monospace;
+    color:var(--paper);
+    box-shadow:var(--shadow);
+    animation:toastIn .22s cubic-bezier(.2,.8,.3,1);
+    max-width:260px;
+  }
+  .toast.done{ border-left-color:var(--done); }
+  .toast.err{ border-left-color:var(--danger); }
+  .toast.fade{ animation:toastOut .25s ease forwards; }
+  @keyframes toastIn{ from{ opacity:0; transform:translateY(8px) scale(.97); } to{ opacity:1; transform:none; } }
+  @keyframes toastOut{ to{ opacity:0; transform:translateY(6px) scale(.97); } }
+  .composer{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:16px;
+    display:flex;
+    gap:10px;
+    margin-bottom:30px;
+    flex-wrap:wrap;
+  }
+  .composer input[type=text]{
+    background:var(--ink);
+    border:1px solid var(--line);
+    border-radius:7px;
+    padding:10px 13px;
+    color:var(--paper);
+    font-size:14px;
+  }
+  .composer input[type=text]:focus{ outline:1px solid var(--work); }
+  .composer #newTitle{ flex:2; min-width:200px; }
+  .composer #newNotes{ flex:3; min-width:200px; }
+
+  /* ---- Board ---- */
+  .board{
+    display:grid;
+    grid-template-columns:repeat(3, 1fr);
+    gap:18px;
+  }
+  @media (max-width:820px){
+    .board{ grid-template-columns:1fr; }
+  }
+
+  .column{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:14px;
+    min-height:200px;
+    display:flex;
+    flex-direction:column;
+  }
+  .column.drag-over{ border-color:var(--work); box-shadow:0 0 0 1px var(--work) inset; }
+
+  .col-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-bottom:14px;
+    padding-bottom:10px;
+    border-bottom:1px dashed var(--line);
+  }
+  .col-head .name{
+    font-family:'Space Grotesk', sans-serif;
+    font-weight:700;
+    font-size:14.5px;
+    letter-spacing:0.02em;
+    text-transform:uppercase;
+  }
+  .col-head .count{
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px;
+    padding:2px 8px;
+    border-radius:20px;
+    background:var(--panel-raised);
+    color:var(--paper-dim);
+    transition:transform .25s ease;
+  }
+  .col-head .count.bump{ transform:scale(1.25); }
+  .column[data-status="todo"] .col-head .name{ color:var(--todo); }
+  .column[data-status="working"] .col-head .name{ color:var(--work); }
+  .column[data-status="done"] .col-head .name{ color:var(--done); }
+
+  .cards{ display:flex; flex-direction:column; gap:10px; flex:1; }
+
+  .empty-slot{
+    border:1px dashed var(--line);
+    border-radius:8px;
+    padding:22px 10px;
+    text-align:center;
+    color:#4d5261;
+    font-size:12.5px;
+    font-family:'JetBrains Mono', monospace;
+  }
+
+  /* ---- Task card ---- */
+  .card{
+    background:var(--panel-raised);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:12px 12px 10px;
+    cursor:grab;
+    position:relative;
+    transition:border-color .12s ease, transform .15s ease, box-shadow .15s ease;
+    animation:cardIn .22s cubic-bezier(.2,.8,.3,1);
+  }
+  .card:hover{ border-color:var(--paper-dim); transform:translateY(-2px); box-shadow:var(--shadow); }
+  .card.dragging{ opacity:0.35; }
+  .card.removing{ animation:cardOut .18s ease forwards; }
+  .card.bump{ animation:cardBump .35s ease; }
+  @keyframes cardIn{ from{ opacity:0; transform:translateY(6px) scale(.98); } to{ opacity:1; transform:none; } }
+  @keyframes cardOut{ to{ opacity:0; transform:scale(.94); } }
+  @keyframes cardBump{ 0%{ transform:scale(1); } 35%{ transform:scale(1.03); } 100%{ transform:scale(1); } }
+
+  .card .id{
+    font-family:'JetBrains Mono', monospace;
+    font-size:10px;
+    color:var(--paper-dim);
+    letter-spacing:0.06em;
+  }
+  .card .title{
+    font-size:14.5px;
+    font-weight:600;
+    margin:5px 0 4px;
+    line-height:1.35;
+    border-radius:4px;
+    padding:1px 3px;
+    margin-left:-3px;
+  }
+  .card .title:hover{ background:var(--ink); cursor:text; }
+  .card .title.editing{
+    background:var(--ink);
+    outline:1px solid var(--work);
+  }
+  .card .notes{
+    font-size:12.5px;
+    color:var(--paper-dim);
+    line-height:1.4;
+    margin-bottom:8px;
+  }
+  .card .row{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-top:6px;
+  }
+  .stamp{
+    font-family:'JetBrains Mono', monospace;
+    font-size:9.5px;
+    font-weight:600;
+    letter-spacing:0.1em;
+    text-transform:uppercase;
+    padding:3px 8px;
+    border-radius:4px;
+    transform:rotate(-2deg);
+    border:1px solid currentColor;
+  }
+  .column[data-status="todo"] .stamp{ color:var(--todo); background:var(--todo-bg); }
+  .column[data-status="working"] .stamp{ color:var(--work); background:var(--work-bg); }
+  .column[data-status="done"] .stamp{ color:var(--done); background:var(--done-bg); }
+
+  .card-actions{ display:flex; gap:6px; }
+  .icon-btn{
+    background:none;
+    border:none;
+    color:var(--paper-dim);
+    cursor:pointer;
+    font-size:12px;
+    padding:3px 5px;
+    border-radius:4px;
+    font-family:'JetBrains Mono', monospace;
+  }
+  .icon-btn:hover{ color:var(--paper); background:var(--ink); }
+  .icon-btn:focus-visible{ outline:2px solid var(--work); }
+
+  footer{
+    text-align:center;
+    margin-top:36px;
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px;
+    color:#4d5261;
+  }
+  footer a{ color:var(--paper-dim); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="masthead">
+      <h1>Tracker
+      </h1>
+      <div class="tag">Daily task board · yet to do → working → done</div>
+    </div>
+    <div style="display:flex; align-items:center; gap:16px;">
+      <div class="date-stamp" id="dateStamp"></div>
+      <button class="theme-toggle" id="themeToggle" title="Toggle light/dark theme" aria-label="Toggle theme">
+        <span class="knob" id="themeKnob">☾</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="conn" id="conn" style="margin-bottom:14px;">
+    <span class="dot"></span>
+    <span id="connLabel">connecting…</span>
+  </div>
+
+  <div class="progress-wrap">
+    <div class="progress-labels">
+      <span id="progressLabel">0 of 0 done</span>
+      <span id="progressPct">0%</span>
+    </div>
+    <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+  </div>
+
+  <div class="composer">
+    <input type="text" id="newTitle" placeholder="Task title">
+    <input type="text" id="newNotes" placeholder="Notes (optional)">
+    <button class="btn primary" id="addBtn">Add task</button>
+    <div class="search-wrap">
+      <input type="text" id="searchInput" placeholder="Filter tasks…">
+    </div>
+  </div>
+
+  <div class="board">
+    <div class="column" data-status="todo">
+      <div class="col-head"><span class="name">Yet to do</span><span class="count" id="count-todo">0</span></div>
+      <div class="cards" id="cards-todo"></div>
+    </div>
+    <div class="column" data-status="working">
+      <div class="col-head"><span class="name">Working</span><span class="count" id="count-working">0</span></div>
+      <div class="cards" id="cards-working"></div>
+    </div>
+    <div class="column" data-status="done">
+      <div class="col-head"><span class="name">Done</span><span class="count" id="count-done">0</span></div>
+      <div class="cards" id="cards-done"></div>
+    </div>
+  </div>
+
+  <footer>
+    Every change is saved automatically. Your Google Sheet is the database — nothing to click, nothing to see.
+  </footer>
+
+</div>
+
+<div class="toast-stack" id="toastStack"></div>
+
+<script>
+  // ============================================================
+  // BACKEND CONFIG — paste your deployed Google Apps Script
+  // Web App URL below. This is the only thing you need to edit.
+  // The sheet is never exposed to the user — it's just the
+  // storage this page reads from / writes to in the background.
+  // ============================================================
+  const CONFIG = {
+    SHEET_API_URL: "https://script.google.com/macros/s/AKfycbztkGRNQC4gOPK2E1hv9L1r1ezZfEYr32ciN5IfIgDWfoNEKEkZPTujmg2PgTQ4EuBC/exec"
+  };
+  // ============================================================
+
+  // ---------- theme ----------
+  const themeToggle = document.getElementById('themeToggle');
+  const themeKnob = document.getElementById('themeKnob');
+  function applyTheme(theme){
+    document.documentElement.setAttribute('data-theme', theme);
+    themeKnob.textContent = theme === 'light' ? '☀' : '☾';
+  }
+  applyTheme('dark');
+  themeToggle.addEventListener('click', () => {
+    const current = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    applyTheme(current);
+  });
+
+  // ---------- state ----------
+  let tasks = []; // {id, title, notes, status, created}
+  let taskCounter = 1;
+  let dragId = null;
+  let saveTimer = null;
+  let filterText = '';
+  let prevCounts = { todo:0, working:0, done:0 };
+
+  const statuses = ['todo','working','done'];
+  const columns = {
+    todo: document.getElementById('cards-todo'),
+    working: document.getElementById('cards-working'),
+    done: document.getElementById('cards-done'),
+  };
+  const counts = {
+    todo: document.getElementById('count-todo'),
+    working: document.getElementById('count-working'),
+    done: document.getElementById('count-done'),
+  };
+
+  document.getElementById('dateStamp').innerHTML =
+    '<b>' + new Date().toLocaleDateString(undefined, {weekday:'long', month:'short', day:'numeric'}) + '</b><br>' +
+    new Date().getFullYear();
+
+  function makeId(){
+    return 'TASK-' + String(taskCounter++).padStart(3,'0');
+  }
+
+  function render(){
+    statuses.forEach(s => { columns[s].innerHTML = ''; });
+    const tally = { todo:0, working:0, done:0 };
+    const q = filterText.trim().toLowerCase();
+
+    tasks.forEach(t => {
+      tally[t.status]++;
+      const matches = !q || t.title.toLowerCase().includes(q) || t.notes.toLowerCase().includes(q);
+      if (!matches) return;
+
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.draggable = true;
+      card.dataset.id = t.id;
+
+      card.innerHTML = `
+        <div class="id">${t.id}</div>
+        <div class="title" tabindex="0" title="Double-click to rename"></div>
+        ${t.notes ? '<div class="notes"></div>' : ''}
+        <div class="row">
+          <span class="stamp">${labelFor(t.status)}</span>
+          <span class="card-actions"></span>
+        </div>
+      `;
+      card.querySelector('.title').textContent = t.title;
+      if (t.notes) card.querySelector('.notes').textContent = t.notes;
+
+      // inline rename on double-click
+      const titleEl = card.querySelector('.title');
+      titleEl.addEventListener('dblclick', () => {
+        titleEl.contentEditable = 'true';
+        titleEl.classList.add('editing');
+        titleEl.focus();
+        document.execCommand('selectAll', false, null);
+      });
+      titleEl.addEventListener('blur', () => {
+        if (titleEl.contentEditable !== 'true') return;
+        titleEl.contentEditable = 'false';
+        titleEl.classList.remove('editing');
+        const newTitle = titleEl.textContent.trim();
+        if (newTitle && newTitle !== t.title) {
+          t.title = newTitle;
+          scheduleSave();
+          showToast('Renamed to "' + newTitle + '"');
+        } else {
+          titleEl.textContent = t.title;
+        }
+      });
+      titleEl.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); titleEl.blur(); }
+        if (e.key === 'Escape') { titleEl.textContent = t.title; titleEl.blur(); }
+      });
+
+      const actions = card.querySelector('.card-actions');
+      statuses.filter(s => s !== t.status).forEach(s => {
+        const b = document.createElement('button');
+        b.className = 'icon-btn';
+        b.textContent = '→ ' + labelFor(s);
+        b.title = 'Move to ' + labelFor(s);
+        b.addEventListener('click', () => {
+          t.status = s;
+          render();
+          scheduleSave();
+          showToast(t.title + ' → ' + labelFor(s), s === 'done' ? 'done' : '');
+        });
+        actions.appendChild(b);
+      });
+      const del = document.createElement('button');
+      del.className = 'icon-btn';
+      del.textContent = '✕';
+      del.title = 'Delete task';
+      del.addEventListener('click', () => {
+        card.classList.add('removing');
+        setTimeout(() => {
+          tasks = tasks.filter(x => x.id !== t.id);
+          render();
+          scheduleSave();
+        }, 160);
+        showToast('Deleted "' + t.title + '"', 'err');
+      });
+      actions.appendChild(del);
+
+      card.addEventListener('dragstart', () => {
+        dragId = t.id;
+        card.classList.add('dragging');
+      });
+      card.addEventListener('dragend', () => card.classList.remove('dragging'));
+
+      columns[t.status].appendChild(card);
+    });
+
+    statuses.forEach(s => {
+      counts[s].textContent = tally[s];
+      if (tally[s] !== prevCounts[s]) {
+        counts[s].classList.remove('bump');
+        void counts[s].offsetWidth; // restart animation
+        counts[s].classList.add('bump');
+      }
+      prevCounts[s] = tally[s];
+      if (columns[s].children.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'empty-slot';
+        empty.textContent = q ? 'no matches' : 'no tasks';
+        columns[s].appendChild(empty);
+      }
+    });
+
+    updateProgress(tally);
+  }
+
+  function updateProgress(tally){
+    const total = tally.todo + tally.working + tally.done;
+    const pct = total ? Math.round((tally.done / total) * 100) : 0;
+    document.getElementById('progressFill').style.width = pct + '%';
+    document.getElementById('progressPct').textContent = pct + '%';
+    document.getElementById('progressLabel').textContent = tally.done + ' of ' + total + ' done';
+  }
+
+  function labelFor(s){
+    return s === 'todo' ? 'Yet to do' : s === 'working' ? 'Working' : 'Done';
+  }
+
+  // ---------- drag and drop on columns ----------
+  document.querySelectorAll('.column').forEach(col => {
+    col.addEventListener('dragover', e => {
+      e.preventDefault();
+      col.classList.add('drag-over');
+    });
+    col.addEventListener('dragleave', () => col.classList.remove('drag-over'));
+    col.addEventListener('drop', e => {
+      e.preventDefault();
+      col.classList.remove('drag-over');
+      const t = tasks.find(x => x.id === dragId);
+      if (t && t.status !== col.dataset.status) {
+        t.status = col.dataset.status;
+        render();
+        scheduleSave();
+        showToast(t.title + ' → ' + labelFor(t.status), t.status === 'done' ? 'done' : '');
+      }
+    });
+  });
+
+  // ---------- add task ----------
+  document.getElementById('addBtn').addEventListener('click', addTask);
+  document.getElementById('newTitle').addEventListener('keydown', e => {
+    if (e.key === 'Enter') addTask();
+    if (e.key === 'Escape') e.target.value = '';
+  });
+  document.getElementById('newNotes').addEventListener('keydown', e => {
+    if (e.key === 'Enter') addTask();
+    if (e.key === 'Escape') e.target.value = '';
+  });
+
+  // ---------- search ----------
+  document.getElementById('searchInput').addEventListener('input', e => {
+    filterText = e.target.value;
+    render();
+  });
+
+  function addTask(){
+    const titleEl = document.getElementById('newTitle');
+    const notesEl = document.getElementById('newNotes');
+    const title = titleEl.value.trim();
+    if (!title) { titleEl.focus(); return; }
+    tasks.push({
+      id: makeId(),
+      title,
+      notes: notesEl.value.trim(),
+      status: 'todo',
+      created: new Date().toISOString()
+    });
+    titleEl.value = '';
+    notesEl.value = '';
+    titleEl.focus();
+    render();
+    scheduleSave();
+    showToast('Added "' + title + '"');
+  }
+
+  // ---------- toasts ----------
+  const toastStack = document.getElementById('toastStack');
+  function showToast(msg, kind){
+    const el = document.createElement('div');
+    el.className = 'toast' + (kind ? ' ' + kind : '');
+    el.textContent = msg;
+    toastStack.appendChild(el);
+    setTimeout(() => {
+      el.classList.add('fade');
+      setTimeout(() => el.remove(), 250);
+    }, 2200);
+  }
+
+  // ============================================================
+  // Backend sync — Google Sheet acts purely as the database.
+  // Nothing here is shown to the user; it just runs quietly
+  // whenever tasks change (debounced) and once on page load.
+  // ============================================================
+  const connEl = document.getElementById('conn');
+  const connLabel = document.getElementById('connLabel');
+
+  function setConn(state, label){
+    connEl.className = 'conn' + (state ? ' ' + state : '');
+    connLabel.textContent = label;
+  }
+
+  function backendConfigured(){
+    return CONFIG.SHEET_API_URL && !CONFIG.SHEET_API_URL.startsWith('PASTE_');
+  }
+
+  async function loadFromBackend(){
+    if (!backendConfigured()) { setConn('err', 'backend not configured'); return; }
+    setConn('busy', 'syncing…');
+    try {
+      const res = await fetch(CONFIG.SHEET_API_URL, { method: 'GET' });
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        tasks = data.map(t => ({
+          id: t.id || makeId(),
+          title: t.title || '',
+          notes: t.notes || '',
+          status: statuses.includes(t.status) ? t.status : 'todo',
+          created: t.created || new Date().toISOString()
+        }));
+        const maxNum = tasks.reduce((m, t) => {
+          const n = parseInt((t.id || '').replace('TASK-',''), 10);
+          return isNaN(n) ? m : Math.max(m, n);
+        }, 0);
+        taskCounter = maxNum + 1;
+        render();
+      }
+      setConn('ok', 'synced');
+      if (tasks.length) showToast('Loaded ' + tasks.length + ' tasks from sheet', 'done');
+    } catch (err) {
+      setConn('err', 'sync failed');
+    }
+  }
+
+  async function saveToBackend(){
+    if (!backendConfigured()) { setConn('err', 'backend not configured'); return; }
+    setConn('busy', 'saving…');
+    try {
+      const res = await fetch(CONFIG.SHEET_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids CORS preflight against Apps Script
+        body: JSON.stringify({ action: 'sync', tasks })
+      });
+      const data = await res.json();
+      setConn(data.result === 'success' ? 'ok' : 'err', data.result === 'success' ? 'synced' : 'save failed');
+    } catch (err) {
+      setConn('err', 'save failed');
+    }
+  }
+
+  // Debounce rapid edits into a single write
+  function scheduleSave(){
+    clearTimeout(saveTimer);
+    setConn('busy', 'saving…');
+    saveTimer = setTimeout(saveToBackend, 600);
+  }
+
+  render();
+  loadFromBackend();
+</script>
+</body>
+</html>
